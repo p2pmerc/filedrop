@@ -48,8 +48,13 @@ func (s *server) download(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "name is required", http.StatusBadRequest)
 		return
 	}
-	path := filepath.Join(s.root, name)
-	data, err := os.ReadFile(path)
+	// Uploads are stored under filepath.Base(name), so a valid download name is a plain file name.
+	// Reject anything with a directory component, "..", or an absolute path.
+	if name != filepath.Base(name) || !filepath.IsLocal(name) {
+		http.Error(w, "invalid name", http.StatusBadRequest)
+		return
+	}
+	data, err := os.ReadFile(filepath.Join(s.root, name))
 	if err != nil {
 		http.NotFound(w, r)
 		return

@@ -40,3 +40,33 @@ func TestListHidesDotfiles(t *testing.T) {
 		t.Fatalf("got %q", rec.Body.String())
 	}
 }
+
+func TestDownloadRejectsPathTraversal(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "uploads")
+	os.MkdirAll(root, 0o755)
+	os.WriteFile(filepath.Join(base, "secret.txt"), []byte("top secret"), 0o644)
+	os.WriteFile(filepath.Join(root, "sub.txt"), []byte("x"), 0o644)
+	_, h := newServer(root)
+
+	for _, name := range []string{
+		"../secret.txt",
+		"foo/../../secret.txt",
+		"/etc/passwd",
+		filepath.Join(base, "secret.txt"),
+		"uploads/sub.txt",
+	} {
+		req := httptest.NewRequest("GET", "/download", nil)
+		q := req.URL.Query()
+		q.Set("name", name)
+		req.URL.RawQuery = q.Encode()
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("name %q: got %d, want 400", name, rec.Code)
+		}
+		if rec.Body.String() == "top secret" {
+			t.Errorf("name %q leaked a file outside the upload directory", name)
+		}
+	}
+}
